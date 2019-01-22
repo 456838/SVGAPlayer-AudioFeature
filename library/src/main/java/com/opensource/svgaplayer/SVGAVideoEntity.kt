@@ -5,14 +5,18 @@ import android.graphics.BitmapFactory
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.SoundPool
+import android.os.Environment
 import com.opensource.svgaplayer.entities.SVGAAudioEntity
 import com.opensource.svgaplayer.entities.SVGAVideoSpriteEntity
+import com.opensource.svgaplayer.proto.AudioEntity
 import com.opensource.svgaplayer.proto.MovieEntity
 import com.opensource.svgaplayer.utils.SVGARect
+import com.salton123.log.XLog
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.file.Files.exists
 import java.util.*
 
 private val options = BitmapFactory.Options()
@@ -23,8 +27,6 @@ private val options = BitmapFactory.Options()
 class SVGAVideoEntity {
 
     protected fun finalize() {
-        this.soundPool?.release()
-        this.soundPool = null
         this.images.forEach { it.value.recycle() }
         this.images.clear()
     }
@@ -41,8 +43,7 @@ class SVGAVideoEntity {
         private set
 
     internal var sprites: List<SVGAVideoSpriteEntity> = listOf()
-    internal var audios: List<SVGAAudioEntity> = listOf()
-    internal var soundPool: SoundPool? = null
+    internal var mAudioEntities: List<SVGAAudioEntity> = listOf()
     internal var images = HashMap<String, Bitmap>()
     private var cacheDir: File
 
@@ -84,6 +85,54 @@ class SVGAVideoEntity {
                 callback()
             }
         } ?: callback()
+    }
+
+    private fun resetAudios(obj: MovieEntity, completionBlock: () -> Unit) {
+        obj.audios?.takeIf { it.isNotEmpty() }?.let { audios ->
+            val audiosData = HashMap<String, ByteArray>()
+            val entities = HashMap<AudioEntity, File>()
+            obj.images?.entries?.forEach {
+                val imageKey = it.key
+                val byteArray = it.value.toByteArray()
+                if (byteArray.count() < 4) {
+                    return@forEach
+                }
+                val fileTag = byteArray.slice(IntRange(0, 3))
+                if (fileTag[0].toInt() == 73 && fileTag[1].toInt() == 68 && fileTag[2].toInt() == 51 && fileTag[3].toInt() == 3) {
+                    audiosData[imageKey] = byteArray
+                }
+            }
+            if (audiosData.count() > 0) {
+                audiosData.forEach {
+                    val tmpFile = File(File(System.getProperty("java.io.tmpdir", ".")).path + File.separator + "${it.key}" + ".mp3")
+                    if (!tmpFile.exists()) {
+                        tmpFile.parentFile.mkdirs()
+                        val fos = FileOutputStream(tmpFile)
+                        fos.write(it.value)
+                        fos.flush()
+                        fos.close()
+                    }
+                    XLog.i(this, "key:" + it.key + "tmpFile:" + tmpFile)
+                    audios.forEach { audioItem ->
+                        if (audioItem.audioKey == it.key) {
+                            entities[audioItem] = tmpFile
+                        }
+                    }
+                }
+            }
+
+            SoundPoolManager.INSTANCE.load(entities, object : SoundPoolManager.AudioLoadCallback {
+                override fun onLoadSuccess(mAudioDataSources: MutableList<AudioDataSource>?) {
+                    mAudioEntities = mAudioDataSources?.map { it.svgaAudioEntity }!!
+                    XLog.i(this, mAudioEntities.toString() + "")
+                    completionBlock()
+                }
+                override fun onLoadError(type: Int) {
+                    completionBlock()
+                }
+            })
+
+        } ?: kotlin.run(completionBlock)
     }
 
     private fun resetImages(obj: JSONObject) {
@@ -156,59 +205,6 @@ class SVGAVideoEntity {
         } ?: listOf()
     }
 
-    private fun resetAudios(obj: MovieEntity, completionBlock: () -> Unit) {
-        obj.audios?.takeIf { it.isNotEmpty() }?.let { audios ->
-            var soundLoaded = 0
-            val soundPool = if (android.os.Build.VERSION.SDK_INT >= 21) {
-                SoundPool.Builder().setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build())
-                        .setMaxStreams(Math.min(12, audios.count()))
-                        .build()
-            } else {
-                SoundPool(Math.min(12, audios.count()), AudioManager.STREAM_MUSIC, 0)
-            }
-            val audiosFile = HashMap<String, File>()
-            soundPool.setOnLoadCompleteListener { _, _, _ ->
-                soundLoaded++
-                if (soundLoaded >= audios.count()) {
-                    completionBlock()
-                }
-            }
-            val audiosData = HashMap<String, ByteArray>()
-            obj.images?.entries?.forEach {
-                val imageKey = it.key
-                val byteArray = it.value.toByteArray()
-                if (byteArray.count() < 4) {
-                    return@forEach
-                }
-                val fileTag = byteArray.slice(IntRange(0, 3))
-                if (fileTag[0].toInt() == 73 && fileTag[1].toInt() == 68 && fileTag[2].toInt() == 51 && fileTag[3].toInt() == 3) {
-                    audiosData[imageKey] = byteArray
-                }
-            }
-            if (audiosData.count() > 0) {
-                audiosData.forEach {
-                    val tmpFile = File.createTempFile(it.key, ".mp3")
-                    val fos = FileOutputStream(tmpFile)
-                    fos.write(it.value)
-                    fos.flush()
-                    fos.close()
-                    audiosFile[it.key] = tmpFile
-                }
-            }
-            this.audios = audios.map { audio ->
-                val item = SVGAAudioEntity(audio)
-                audiosFile[audio.audioKey]?.let {
-                    val fis = FileInputStream(it)
-                    item.soundID = soundPool.load(fis.fd, (((audio.startTime
-                            ?: 0).toDouble() / (audio.totalTime
-                            ?: 0).toDouble()) * fis.available().toDouble()).toLong(), fis.available().toLong(), 1)
-                    fis.close()
-                }
-                return@map item
-            }
-            this.soundPool = soundPool
-        } ?: kotlin.run(completionBlock)
-    }
 
 }
 

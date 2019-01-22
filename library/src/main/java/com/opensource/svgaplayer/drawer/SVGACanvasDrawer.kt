@@ -5,6 +5,7 @@ import android.text.StaticLayout
 import android.widget.ImageView
 import com.opensource.svgaplayer.SVGADynamicEntity
 import com.opensource.svgaplayer.SVGAVideoEntity
+import com.opensource.svgaplayer.SoundPoolManager
 import com.opensource.svgaplayer.entities.SVGAVideoShapeEntity
 
 /**
@@ -18,7 +19,7 @@ internal class SVGACanvasDrawer(videoItem: SVGAVideoEntity, val dynamicItem: SVG
     private val pathCache = PathCache()
 
     override fun drawFrame(canvas: Canvas, frameIndex: Int, scaleType: ImageView.ScaleType) {
-        super.drawFrame(canvas,frameIndex, scaleType)
+        super.drawFrame(canvas, frameIndex, scaleType)
         this.pathCache.onSizeChanged(canvas)
         val sprites = requestFrameSprites(frameIndex)
         sprites.forEach {
@@ -28,17 +29,15 @@ internal class SVGACanvasDrawer(videoItem: SVGAVideoEntity, val dynamicItem: SVG
     }
 
     private fun playAudio(frameIndex: Int) {
-        this.videoItem.audios.forEach { audio ->
+        this.videoItem.mAudioEntities.forEach { audio ->
             if (audio.startFrame == frameIndex) {
-                this.videoItem.soundPool?.let { soundPool ->
-                    audio.soundID?.let {soundID ->
-                        audio.playID = soundPool.play(soundID, 1.0f, 1.0f, 1, 0, 1.0f)
-                    }
+                audio.soundID?.let { soundID ->
+                    audio.playID = SoundPoolManager.INSTANCE.play(soundID)
                 }
             }
             if (audio.endFrame <= frameIndex) {
                 audio.playID?.let {
-                    this.videoItem.soundPool?.stop(it)
+                    SoundPoolManager.INSTANCE.stop(it)
                 }
                 audio.playID = null
             }
@@ -53,17 +52,20 @@ internal class SVGACanvasDrawer(videoItem: SVGAVideoEntity, val dynamicItem: SVG
         return matrix
     }
 
-    private fun drawSprite(sprite: SVGADrawerSprite, canvas :Canvas, frameIndex: Int) {
+    private fun drawSprite(sprite: SVGADrawerSprite, canvas: Canvas, frameIndex: Int) {
         drawImage(sprite, canvas)
         drawShape(sprite, canvas)
         drawDynamic(sprite, canvas, frameIndex)
     }
 
-    private fun drawImage(sprite: SVGADrawerSprite, canvas :Canvas) {
+    private fun drawImage(sprite: SVGADrawerSprite, canvas: Canvas) {
         val imageKey = sprite.imageKey ?: return
         val isHidden = dynamicItem.dynamicHidden[imageKey] == true
-        if (isHidden) { return }
-        val drawingBitmap = (dynamicItem.dynamicImage[imageKey] ?: videoItem.images[imageKey]) ?: return
+        if (isHidden) {
+            return
+        }
+        val drawingBitmap = (dynamicItem.dynamicImage[imageKey] ?: videoItem.images[imageKey])
+                ?: return
         val frameMatrix = shareFrameMatrix(sprite.frameEntity.transform)
         val paint = this.sharedValues.sharedPaint()
         paint.isAntiAlias = videoItem.antiAlias
@@ -80,8 +82,7 @@ internal class SVGACanvasDrawer(videoItem: SVGAVideoEntity, val dynamicItem: SVG
             frameMatrix.preScale((sprite.frameEntity.layout.width / drawingBitmap.width).toFloat(), (sprite.frameEntity.layout.width / drawingBitmap.width).toFloat())
             canvas.drawBitmap(drawingBitmap, frameMatrix, paint)
             canvas.restore()
-        }
-        else {
+        } else {
             frameMatrix.preScale((sprite.frameEntity.layout.width / drawingBitmap.width).toFloat(), (sprite.frameEntity.layout.width / drawingBitmap.width).toFloat())
             canvas.drawBitmap(drawingBitmap, frameMatrix, paint)
         }
@@ -141,8 +142,7 @@ internal class SVGACanvasDrawer(videoItem: SVGAVideoEntity, val dynamicItem: SVG
                 maskPath.buildPath(path)
                 canvas.drawPath(path, paint)
                 canvas.restore()
-            }
-            else {
+            } else {
                 paint.isFilterBitmap = videoItem.antiAlias
                 canvas.drawBitmap(textBitmap, frameMatrix, paint)
             }
@@ -258,7 +258,7 @@ internal class SVGACanvasDrawer(videoItem: SVGAVideoEntity, val dynamicItem: SVG
         C /= scaleY
         D /= scaleY
         skew /= scaleY
-        if ( A * D < B * C ) {
+        if (A * D < B * C) {
             scaleX = -scaleX
         }
         return if (scaleInfo.ratioX) Math.abs(scaleX.toFloat()) else Math.abs(scaleY.toFloat())
@@ -314,10 +314,10 @@ internal class SVGACanvasDrawer(videoItem: SVGAVideoEntity, val dynamicItem: SVG
 
         private var canvasWidth: Int = 0
         private var canvasHeight: Int = 0
-        private val cache = HashMap<SVGAVideoShapeEntity,Path>()
+        private val cache = HashMap<SVGAVideoShapeEntity, Path>()
 
         fun onSizeChanged(canvas: Canvas) {
-            if(this.canvasWidth != canvas.width || this.canvasHeight != canvas.height){
+            if (this.canvasWidth != canvas.width || this.canvasHeight != canvas.height) {
                 this.cache.clear()
             }
             this.canvasWidth = canvas.width
@@ -325,7 +325,7 @@ internal class SVGACanvasDrawer(videoItem: SVGAVideoEntity, val dynamicItem: SVG
         }
 
         fun buildPath(shape: SVGAVideoShapeEntity): Path {
-            if(!this.cache.containsKey(shape)){
+            if (!this.cache.containsKey(shape)) {
                 val path = Path()
                 path.set(shape.shapePath)
                 this.cache[shape] = path

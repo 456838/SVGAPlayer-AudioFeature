@@ -94,8 +94,7 @@ class SVGAParser(private val context: Context) {
             context.assets.open(name)?.let {
                 this.decodeFromInputStream(it, buildCacheKey("file:///assets/$name"), callback, true)
             }
-        }
-        catch (e: java.lang.Exception) {
+        } catch (e: java.lang.Exception) {
             this.invokeErrorCallback(e, callback)
         }
     }
@@ -106,8 +105,7 @@ class SVGAParser(private val context: Context) {
                 this.decodeFromCacheKey(buildCacheKey(url), callback)
             }
             return null
-        }
-        else {
+        } else {
             return fileDownloader.resume(url, {
                 this.decodeFromInputStream(it, this.buildCacheKey(url), callback)
             }, {
@@ -127,13 +125,12 @@ class SVGAParser(private val context: Context) {
                             }
                         }
                         this.decodeFromCacheKey(cacheKey, callback)
-                    }
-                    else {
+                    } else {
                         inflate(bytes)?.let {
                             val videoItem = SVGAVideoEntity(MovieEntity.ADAPTER.decode(it), File(cacheKey))
-//                            videoItem.prepare {
+                            videoItem.prepare {
                                 this.invokeCompleteCallback(videoItem, callback)
-//                            }
+                            }
                         }
                     }
                 }
@@ -254,8 +251,7 @@ class SVGAParser(private val context: Context) {
                 val count = inputStream.read(byteArray, 0, 2048)
                 if (count <= 0) {
                     break
-                }
-                else {
+                } else {
                     byteArrayOutputStream.write(byteArray, 0, count)
                 }
             }
@@ -272,8 +268,7 @@ class SVGAParser(private val context: Context) {
                 val count = inflater.inflate(inflatedBytes, 0, 2048)
                 if (count <= 0) {
                     break
-                }
-                else {
+                } else {
                     inflatedOutputStream.write(inflatedBytes, 0, count)
                 }
             }
